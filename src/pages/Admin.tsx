@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsAdmin } from "@/hooks/useRole";
-import { supabase } from "@/integrations/supabase/client";
+import { getAdminStats } from "@/lib/chat";
 import { ArrowLeft, MessageSquare, Shield, Sparkles, Users } from "lucide-react";
 
 interface Stats {
@@ -22,20 +22,18 @@ export default function Admin() {
   useEffect(() => {
     if (!isAdmin) return;
     (async () => {
-      const [usersRes, convRes, msgRes, imgRes, recentRes] = await Promise.all([
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
-        supabase.from("conversations").select("id", { count: "exact", head: true }),
-        supabase.from("messages").select("id", { count: "exact", head: true }),
-        supabase.from("messages").select("id", { count: "exact", head: true }).eq("kind", "generated_image"),
-        supabase.from("conversations").select("id, title, user_id, created_at, updated_at").order("updated_at", { ascending: false }).limit(20),
-      ]);
-      setStats({
-        users: usersRes.count ?? 0,
-        conversations: convRes.count ?? 0,
-        messages: msgRes.count ?? 0,
-        generatedImages: imgRes.count ?? 0,
-      });
-      setRecent(recentRes.data || []);
+      try {
+        const data = await getAdminStats();
+        setStats({
+          users: data.users,
+          conversations: data.conversations,
+          messages: data.messages,
+          generatedImages: data.generatedImages,
+        });
+        setRecent(data.recent || []);
+      } catch (e) {
+        console.error(e);
+      }
     })();
   }, [isAdmin]);
 
@@ -68,7 +66,7 @@ export default function Admin() {
           </div>
           <div>
             <h1 className="text-2xl font-bold nova-gradient-text">Admin Dashboard</h1>
-            <p className="text-xs text-muted-foreground">Full access to NovaMind data</p>
+            <p className="text-xs text-muted-foreground">Full access to NovaMind data (MongoDB)</p>
           </div>
         </div>
 
@@ -93,7 +91,7 @@ export default function Admin() {
             {recent.map((c) => (
               <div key={c.id} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
                 <div className="min-w-0 flex-1 truncate">{c.title}</div>
-                <div className="text-xs text-muted-foreground font-mono">{c.user_id.slice(0, 8)}…</div>
+                <div className="text-xs text-muted-foreground font-mono">{String(c.user_id).slice(0, 8)}…</div>
                 <div className="text-xs text-muted-foreground">
                   {new Date(c.updated_at).toLocaleDateString()}
                 </div>
@@ -103,7 +101,7 @@ export default function Admin() {
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          You also have direct database access in <span className="text-primary">Lovable Cloud → Database</span>.
+          Data is stored in your <span className="text-primary">MongoDB Atlas</span> cluster (database <code>novamind</code>).
         </p>
       </div>
     </div>
