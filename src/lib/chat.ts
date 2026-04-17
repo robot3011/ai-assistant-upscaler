@@ -35,8 +35,24 @@ export const REASONING_LEVELS = [
   { id: "high", label: "High — most thorough" },
 ] as const;
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
+const MONGO_URL = `${SUPABASE_URL}/functions/v1/mongo-api`;
+
+// Helper: invoke mongo-api with the user's JWT
+async function mongo<T = any>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || ANON_KEY;
+  const resp = await fetch(MONGO_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action, payload }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data?.error || `mongo-api ${action} failed`);
+  return data as T;
+}
 
 type ApiMessageContent =
   | string
@@ -162,15 +178,11 @@ export function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
-// ---------- DB ----------
+// ---------- MongoDB-backed data access ----------
 
 export async function loadConversationsFromDb(): Promise<Conversation[]> {
-  const { data, error } = await supabase
-    .from("conversations")
-    .select("*")
-    .order("updated_at", { ascending: false });
-  if (error) throw error;
-  return (data || []).map((c: any) => ({
+  const { items } = await mongo<{ items: any[] }>("listConversations");
+  return (items || []).map((c) => ({
     id: c.id,
     title: c.title,
     system_prompt: c.system_prompt,
@@ -181,13 +193,8 @@ export async function loadConversationsFromDb(): Promise<Conversation[]> {
 }
 
 export async function loadMessagesFromDb(conversationId: string): Promise<Message[]> {
-  const { data, error } = await supabase
-    .from("messages")
-    .select("*")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data || []).map((m: any) => ({
+  const { items } = await mongo<{ items: any[] }>("listMessages", { conversationId });
+  return (items || []).map((m) => ({
     id: m.id,
     role: m.role,
     content: m.content,
@@ -199,70 +206,63 @@ export async function loadMessagesFromDb(conversationId: string): Promise<Messag
 
 export async function createConversationInDb(
   title: string,
-  userId: string,
+  _userId: string,
   tone = "balanced",
   systemPrompt?: string | null
 ) {
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert({ title, user_id: userId, tone, system_prompt: systemPrompt ?? null })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  const { item } = await mongo<{ item: any }>("createConversation", {
+    title,
+    tone,
+    system_prompt: systemPrompt ?? null,
+  });
+  return { id: item.id, created_at: item.created_at };
 }
 
 export async function saveMessageToDb(
   conversationId: string,
-  userId: string,
+  _userId: string,
   role: "user" | "assistant",
   content: string,
   images?: MessageImage[],
   kind: "text" | "generated_image" = "text"
 ) {
-  const { data, error } = await supabase
-    .from("messages")
-    .insert({
-      conversation_id: conversationId,
-      user_id: userId,
-      role,
-      content,
-      images: (images as any) ?? null,
-      kind,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  // bump conversation updated_at
-  await supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
-  return data;
+  const { item } = await mongo<{ item: any }>("addMessage", {
+    conversationId,
+    role,
+    content,
+    images: images ?? null,
+    kind,
+  });
+  return item;
 }
 
 export async function updateConversationTitle(id: string, title: string) {
-  await supabase.from("conversations").update({ title }).eq("id", id);
+  await mongo("updateConversation", { id, updates: { title } });
 }
 
 export async function updateConversationSettings(
   id: string,
   updates: { system_prompt?: string | null; tone?: string }
 ) {
-  await supabase.from("conversations").update(updates).eq("id", id);
+  await mongo("updateConversation", { id, updates });
 }
 
 export async function deleteConversationFromDb(id: string) {
-  await supabase.from("conversations").delete().eq("id", id);
+  await mongo("deleteConversation", { id });
 }
 
 export async function deleteLastMessage(conversationId: string) {
-  const { data } = await supabase
-    .from("messages")
-    .select("id")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (data && data[0]) {
-    await supabase.from("messages").delete().eq("id", data[0].id);
-  }
+  await mongo("deleteLastMessage", { conversationId });
+}
+
+export async function getAdminStats() {
+  return mongo<{
+    users: number;
+    conversations: number;
+    messages: number;
+    generatedImages: number;
+    recent: any[];
+  }>("getStats");
 }
 
 export function exportConversation(conversation: Conversation): string {
