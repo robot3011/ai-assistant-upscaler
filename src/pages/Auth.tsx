@@ -48,12 +48,18 @@ export default function Auth() {
     try {
       const result = await lovable.auth.signInWithOAuth("google", {
         redirect_uri: window.location.origin,
+        extraParams: { prompt: "select_account" },
       });
       if (result.error) throw result.error;
-      if (result.redirected) return;
+      if (result.redirected) return; // browser is redirecting to Google
       navigate("/", { replace: true });
     } catch (err: any) {
-      toast.error(err.message || "Google sign-in failed");
+      const msg = String(err?.message || err || "");
+      if (/preview|iframe|sandbox|popup|blocked/i.test(msg)) {
+        toast.error("Google sign-in works on the published site. Please publish and try there.");
+      } else {
+        toast.error(msg || "Google sign-in failed");
+      }
       setBusy(false);
     }
   };
@@ -135,11 +141,6 @@ export default function Auth() {
           >
             {mode === "signin" ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
           </button>
-          {mode === "signup" && (
-            <p className="text-center text-[10px] text-primary">
-              ⚡ The first account becomes admin automatically
-            </p>
-          )}
         </form>
       </div>
     </div>
