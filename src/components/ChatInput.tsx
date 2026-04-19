@@ -58,19 +58,36 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
-    let finalText = input;
+
+    // Snapshot text already in the textarea before voice starts.
+    // We only ever append NEW finalized segments (results after this resultIndex)
+    // so each word is committed exactly once.
+    const baseText = input;
+    let committed = ""; // finalized text from this voice session only
+
     rec.onresult = (e: any) => {
       let interim = "";
+      let newlyFinal = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) finalText += (finalText ? " " : "") + t;
-        else interim = t;
+        if (e.results[i].isFinal) newlyFinal += t;
+        else interim += t;
       }
-      setInput(finalText + (interim ? " " + interim : ""));
+      if (newlyFinal) {
+        committed += (committed && !committed.endsWith(" ") ? " " : "") + newlyFinal.trim();
+      }
+      const joiner = baseText && !baseText.endsWith(" ") ? " " : "";
+      setInput(
+        baseText +
+          (committed ? joiner + committed : "") +
+          (interim ? (committed || baseText ? " " : "") + interim.trim() : "")
+      );
     };
-    rec.onerror = () => {
+    rec.onerror = (ev: any) => {
       setIsListening(false);
-      toast.error("Voice recognition error");
+      if (ev?.error !== "no-speech" && ev?.error !== "aborted") {
+        toast.error("Voice recognition error");
+      }
     };
     rec.onend = () => setIsListening(false);
     rec.start();
