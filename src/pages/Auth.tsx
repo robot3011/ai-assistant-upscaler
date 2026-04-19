@@ -133,7 +133,19 @@ export default function Auth() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium">Password</label>
+            <div className="mb-1 flex items-center justify-between">
+              <label className="block text-sm font-medium">Password</label>
+              {mode === "signin" && (
+                <button
+                  type="button"
+                  onClick={sendResetEmail}
+                  disabled={busy}
+                  className="text-xs text-primary hover:underline disabled:opacity-60"
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
             <input
               type="password"
               required
