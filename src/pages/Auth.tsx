@@ -74,6 +74,24 @@ export default function Auth() {
     }
   };
 
+  const sendResetEmail = async () => {
+    if (!email) {
+      toast.error("Enter your email above first, then click Forgot password");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) throw error;
+      toast.success("Check your inbox for a password reset link");
+    } catch (err: any) {
+      toast.error(err.message || "Couldn't send reset email");
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-md">
