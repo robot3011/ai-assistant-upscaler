@@ -10,6 +10,7 @@ export default function Auth() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,10 @@ export default function Auth() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/` },
+          options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: { display_name: name || email.split("@")[0] },
+          },
         });
         if (error) throw error;
         toast.success("Welcome to NovaMind!");
@@ -55,8 +59,14 @@ export default function Auth() {
       navigate("/", { replace: true });
     } catch (err: any) {
       const msg = String(err?.message || err || "");
-      if (/preview|iframe|sandbox|popup|blocked/i.test(msg)) {
-        toast.error("Google sign-in works on the published site. Please publish and try there.");
+      const host = window.location.hostname;
+      const isLovableHost = /lovable\.app$/i.test(host) || host === "localhost";
+      if (!isLovableHost) {
+        toast.error(
+          "Google sign-in only works on the Lovable-published URL or a custom domain added in Lovable. Use email/password here, or open the app on your published Lovable URL."
+        );
+      } else if (/preview|iframe|sandbox|popup|blocked/i.test(msg)) {
+        toast.error("Google sign-in works on the published site. Please open the published URL.");
       } else {
         toast.error(msg || "Google sign-in failed");
       }
@@ -81,6 +91,19 @@ export default function Auth() {
           onSubmit={submit}
           className="space-y-3 rounded-2xl border border-border bg-card p-6 shadow-elegant"
         >
+          {mode === "signup" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium">Email</label>
             <input
