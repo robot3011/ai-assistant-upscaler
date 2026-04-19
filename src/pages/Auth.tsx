@@ -91,6 +91,19 @@ export default function Auth() {
           onSubmit={submit}
           className="space-y-3 rounded-2xl border border-border bg-card p-6 shadow-elegant"
         >
+          {mode === "signup" && (
+            <div>
+              <label className="mb-1 block text-sm font-medium">Name</label>
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Your name"
+                className="w-full rounded-lg border border-border bg-secondary px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium">Email</label>
             <input
