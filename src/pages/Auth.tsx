@@ -55,8 +55,14 @@ export default function Auth() {
       navigate("/", { replace: true });
     } catch (err: any) {
       const msg = String(err?.message || err || "");
-      if (/preview|iframe|sandbox|popup|blocked/i.test(msg)) {
-        toast.error("Google sign-in works on the published site. Please publish and try there.");
+      const host = window.location.hostname;
+      const isLovableHost = /lovable\.app$/i.test(host) || host === "localhost";
+      if (!isLovableHost) {
+        toast.error(
+          "Google sign-in only works on the Lovable-published URL or a custom domain added in Lovable. Use email/password here, or open the app on your published Lovable URL."
+        );
+      } else if (/preview|iframe|sandbox|popup|blocked/i.test(msg)) {
+        toast.error("Google sign-in works on the published site. Please open the published URL.");
       } else {
         toast.error(msg || "Google sign-in failed");
       }
