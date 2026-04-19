@@ -141,11 +141,6 @@ export default function Auth() {
           >
             {mode === "signin" ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
           </button>
-          {mode === "signup" && (
-            <p className="text-center text-[10px] text-primary">
-              ⚡ The first account becomes admin automatically
-            </p>
-          )}
         </form>
       </div>
     </div>
