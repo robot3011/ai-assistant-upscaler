@@ -18,13 +18,48 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 // Cache the client across invocations
 let cachedClient: MongoClient | null = null;
+let indexesEnsured = false;
 async function getDb() {
   if (!cachedClient) {
     cachedClient = new MongoClient(MONGODB_URI);
     await cachedClient.connect();
   }
   // Database name comes from the URI path; default to "novamind" if absent
-  return cachedClient.db("novamind");
+  const db = cachedClient.db("novamind");
+  if (!indexesEnsured) {
+    try {
+      await Promise.all([
+        // Conversations: fast per-user listing sorted by recency
+        db.collection("conversations").createIndex(
+          { user_id: 1, updated_at: -1 },
+          { name: "user_updated_idx" }
+        ),
+        db.collection("conversations").createIndex(
+          { updated_at: -1 },
+          { name: "updated_idx" }
+        ),
+        // Messages: fast per-conversation listing in chronological order
+        db.collection("messages").createIndex(
+          { conversation_id: 1, created_at: 1 },
+          { name: "conv_time_idx" }
+        ),
+        db.collection("messages").createIndex(
+          { user_id: 1, created_at: -1 },
+          { name: "user_time_idx" }
+        ),
+        // Admin stats: counting generated images
+        db.collection("messages").createIndex(
+          { kind: 1 },
+          { name: "kind_idx" }
+        ),
+      ]);
+      indexesEnsured = true;
+      console.log("MongoDB indexes ensured on novamind db");
+    } catch (e) {
+      console.error("Index creation warning:", e);
+    }
+  }
+  return db;
 }
 
 function json(body: unknown, status = 200) {
