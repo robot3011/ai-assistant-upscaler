@@ -102,6 +102,21 @@ Deno.serve(async (req) => {
     const messages = db.collection("messages");
 
     switch (action) {
+      // ---------- Health ----------
+      case "ping": {
+        const start = Date.now();
+        await db.command({ ping: 1 });
+        const collections = await db.listCollections().toArray();
+        return json({
+          ok: true,
+          db: "novamind",
+          latency_ms: Date.now() - start,
+          collections: collections.map((c: any) => c.name),
+          user_id: user.id,
+          is_admin: user.isAdmin,
+        });
+      }
+
       // ---------- Conversations ----------
       case "listConversations": {
         const filter = user.isAdmin && payload.allUsers ? {} : { user_id: user.id };
