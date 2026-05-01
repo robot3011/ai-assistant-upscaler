@@ -60,28 +60,30 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
     rec.lang = "en-US";
 
     // Snapshot text already in the textarea before voice starts.
-    // We only ever append NEW finalized segments (results after this resultIndex)
-    // so each word is committed exactly once.
+    // Track which result indices have already been committed to avoid
+    // double-counting when the recognizer re-fires the same final result.
     const baseText = input;
-    let committed = ""; // finalized text from this voice session only
+    const committedIndices = new Set<number>();
+    let committed = "";
 
     rec.onresult = (e: any) => {
       let interim = "";
-      let newlyFinal = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        if (e.results[i].isFinal) newlyFinal += t;
-        else interim += t;
-      }
-      if (newlyFinal) {
-        committed += (committed && !committed.endsWith(" ") ? " " : "") + newlyFinal.trim();
+      for (let i = 0; i < e.results.length; i++) {
+        const result = e.results[i];
+        const t = (result[0]?.transcript || "").trim();
+        if (!t) continue;
+        if (result.isFinal) {
+          if (!committedIndices.has(i)) {
+            committedIndices.add(i);
+            committed += (committed && !committed.endsWith(" ") ? " " : "") + t;
+          }
+        } else {
+          interim += (interim ? " " : "") + t;
+        }
       }
       const joiner = baseText && !baseText.endsWith(" ") ? " " : "";
-      setInput(
-        baseText +
-          (committed ? joiner + committed : "") +
-          (interim ? (committed || baseText ? " " : "") + interim.trim() : "")
-      );
+      const tail = [committed, interim].filter(Boolean).join(" ");
+      setInput(baseText + (tail ? joiner + tail : ""));
     };
     rec.onerror = (ev: any) => {
       setIsListening(false);
