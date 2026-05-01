@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { act, render, screen } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
 import { ChatInput, type ChatMode } from "./ChatInput";
 
 /**
@@ -70,19 +70,28 @@ function Harness() {
   );
 }
 
-function getTextarea(): HTMLTextAreaElement {
-  return screen.getByPlaceholderText(/Message NovaMind/i) as HTMLTextAreaElement;
+function getTextarea(container: HTMLElement): HTMLTextAreaElement {
+  const el = container.querySelector(
+    'textarea[placeholder^="Message NovaMind"]'
+  ) as HTMLTextAreaElement | null;
+  if (!el) throw new Error("textarea not found");
+  return el;
 }
 
-function getMicButton(): HTMLButtonElement {
-  // The mic button has title "Voice input" or "Stop"
-  return (screen.queryByTitle("Voice input") ||
-    screen.getByTitle("Stop")) as HTMLButtonElement;
+function getMicButton(container: HTMLElement): HTMLButtonElement {
+  const el = (container.querySelector('button[title="Voice input"]') ||
+    container.querySelector('button[title="Stop"]')) as HTMLButtonElement | null;
+  if (!el) throw new Error("mic button not found");
+  return el;
 }
 
-function startSession() {
+function expectMicIdle(container: HTMLElement) {
+  expect(container.querySelector('button[title="Voice input"]')).not.toBeNull();
+}
+
+function startSession(container: HTMLElement) {
   act(() => {
-    getMicButton().click();
+    getMicButton(container).click();
   });
   const rec =
     MockSpeechRecognition.instances[MockSpeechRecognition.instances.length - 1];
@@ -134,19 +143,18 @@ describe("ChatInput voice input — duplication & stuck-state stress test", () =
   });
 
   it("does not duplicate words within a single session", () => {
-    render(<Harness />);
-    const rec = startSession();
+    const { container } = render(<Harness />);
+    const rec = startSession(container);
     speakPhrase(rec, "hello world this is a test");
 
-    const value = getTextarea().value.trim();
+    const value = getTextarea(container).value.trim();
     expect(value).toBe("hello world this is a test");
 
-    // Mic should have flipped back to "Voice input" (not stuck on Stop)
-    expect(screen.getByTitle("Voice input")).toBeInTheDocument();
+    expectMicIdle(container);
   });
 
   it("survives 5 consecutive recording sessions without duplication or stuck state", () => {
-    render(<Harness />);
+    const { container } = render(<Harness />);
 
     const phrases = [
       "first phrase",
@@ -158,10 +166,10 @@ describe("ChatInput voice input — duplication & stuck-state stress test", () =
 
     let previous = "";
     for (const phrase of phrases) {
-      const rec = startSession();
+      const rec = startSession(container);
       speakPhrase(rec, phrase);
 
-      const value = getTextarea().value;
+      const value = getTextarea(container).value;
 
       // Transcript grows monotonically — old content is preserved verbatim
       expect(value.startsWith(previous)).toBe(true);
@@ -178,22 +186,20 @@ describe("ChatInput voice input — duplication & stuck-state stress test", () =
       }
       expect(words).toEqual(phrase.split(" "));
 
-      // Mic must not be stuck listening between sessions
-      expect(screen.getByTitle("Voice input")).toBeInTheDocument();
+      expectMicIdle(container);
 
       previous = value.trimEnd();
     }
 
-    // Final transcript contains every phrase exactly once, in order
-    expect(getTextarea().value.trim()).toBe(phrases.join(" "));
+    expect(getTextarea(container).value.trim()).toBe(phrases.join(" "));
 
     // 5 separate recognizer instances were created (one per session)
     expect(MockSpeechRecognition.instances.length).toBe(5);
   });
 
   it("ignores re-fired final events with the same resultIndex", () => {
-    render(<Harness />);
-    const rec = startSession();
+    const { container } = render(<Harness />);
+    const rec = startSession(container);
 
     const finals = [makeResult("alpha", true), makeResult("beta", true)];
     // Fire the same final batch 4 times — should commit each word once.
@@ -203,7 +209,7 @@ describe("ChatInput voice input — duplication & stuck-state stress test", () =
     act(() => rec.emit(finals));
     act(() => rec.stop());
 
-    expect(getTextarea().value.trim()).toBe("alpha beta");
-    expect(screen.getByTitle("Voice input")).toBeInTheDocument();
+    expect(getTextarea(container).value.trim()).toBe("alpha beta");
+    expectMicIdle(container);
   });
 });
