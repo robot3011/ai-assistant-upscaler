@@ -99,51 +99,64 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
       return;
     }
     if (isListening && recognitionRef.current) {
+      voiceSessionRef.current += 1;
       recognitionRef.current.stop();
+      recognitionRef.current = null;
       setIsListening(false);
       return;
     }
+    recognitionRef.current?.abort?.();
+    const sessionId = voiceSessionRef.current + 1;
+    voiceSessionRef.current = sessionId;
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
 
-    // Snapshot text already in the textarea before voice starts.
-    // Track which result indices have already been committed to avoid
-    // double-counting when the recognizer re-fires the same final result.
-    const baseText = input;
-    const committedIndices = new Set<number>();
-    let committed = "";
+    const baseText = inputRef.current;
+    const finalByIndex = new Map<number, string>();
 
     rec.onresult = (e: any) => {
+      if (voiceSessionRef.current !== sessionId) return;
       let interim = "";
-      for (let i = 0; i < e.results.length; i++) {
+      for (let i = e.resultIndex ?? 0; i < e.results.length; i++) {
         const result = e.results[i];
-        const t = (result[0]?.transcript || "").trim();
+        const t = cleanSpeechText(result[0]?.transcript || "");
         if (!t) continue;
         if (result.isFinal) {
-          if (!committedIndices.has(i)) {
-            committedIndices.add(i);
-            committed += (committed && !committed.endsWith(" ") ? " " : "") + t;
-          }
+          finalByIndex.set(i, t);
         } else {
           interim += (interim ? " " : "") + t;
         }
       }
-      const joiner = baseText && !baseText.endsWith(" ") ? " " : "";
-      const tail = [committed, interim].filter(Boolean).join(" ");
-      setInput(baseText + (tail ? joiner + tail : ""));
+      const finalized = Array.from(finalByIndex.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, text]) => text)
+        .join(" ");
+      setInput(joinTypedAndSpokenText(baseText, [finalized, interim].filter(Boolean).join(" ")));
     };
     rec.onerror = (ev: any) => {
+      if (voiceSessionRef.current !== sessionId) return;
       setIsListening(false);
+      recognitionRef.current = null;
       if (ev?.error !== "no-speech" && ev?.error !== "aborted") {
         toast.error("Voice recognition error");
       }
     };
-    rec.onend = () => setIsListening(false);
-    rec.start();
-    recognitionRef.current = rec;
-    setIsListening(true);
+    rec.onend = () => {
+      if (voiceSessionRef.current !== sessionId) return;
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+    try {
+      rec.start();
+      recognitionRef.current = rec;
+      setIsListening(true);
+    } catch {
+      recognitionRef.current = null;
+      setIsListening(false);
+      toast.error("Voice input could not start");
+    }
   };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
