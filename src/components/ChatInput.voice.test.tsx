@@ -212,4 +212,16 @@ describe("ChatInput voice input — duplication & stuck-state stress test", () =
     expect(getTextarea(container).value.trim()).toBe("alpha beta");
     expectMicIdle(container);
   });
+
+  it("compacts duplicate words and phrases inside a single browser transcript", () => {
+    const { container } = render(<Harness />);
+    const rec = startSession(container);
+
+    act(() => rec.emit([makeResult("hello hello", true)]));
+    act(() => rec.emit([makeResult("hello hello", true), makeResult("how are you how are you", true)]));
+    act(() => rec.stop());
+
+    expect(getTextarea(container).value.trim()).toBe("hello how are you");
+    expectMicIdle(container);
+  });
 });
