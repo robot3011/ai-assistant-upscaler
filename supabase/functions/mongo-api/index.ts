@@ -95,7 +95,36 @@ async function getUserFromAuth(req: Request): Promise<{ id: string; isAdmin: boo
     .select("role")
     .eq("user_id", userData.user.id);
   const isAdmin = (roleData || []).some((r: any) => r.role === "admin");
-  return { id: userData.user.id, isAdmin };
+  return {
+    id: userData.user.id,
+    isAdmin,
+    email: userData.user.email ?? null,
+    displayName:
+      (userData.user.user_metadata as any)?.display_name ||
+      (userData.user.user_metadata as any)?.full_name ||
+      (userData.user.email ? String(userData.user.email).split("@")[0] : null),
+  } as any;
+}
+
+async function upsertUser(db: any, user: { id: string; email: string | null; displayName: string | null; isAdmin: boolean }) {
+  try {
+    await db.collection("users").updateOne(
+      { user_id: user.id },
+      {
+        $set: {
+          user_id: user.id,
+          email: user.email,
+          display_name: user.displayName,
+          is_admin: user.isAdmin,
+          last_seen_at: new Date(),
+        },
+        $setOnInsert: { created_at: new Date() },
+      },
+      { upsert: true }
+    );
+  } catch (e) {
+    console.error("upsertUser warning:", e);
+  }
 }
 
 Deno.serve(async (req) => {
