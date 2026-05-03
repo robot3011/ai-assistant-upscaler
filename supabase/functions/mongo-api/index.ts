@@ -29,6 +29,15 @@ async function getDb() {
   if (!indexesEnsured) {
     try {
       await Promise.all([
+        // Users: one document per signed-in user
+        db.collection("users").createIndex(
+          { user_id: 1 },
+          { name: "user_id_unique", unique: true }
+        ),
+        db.collection("users").createIndex(
+          { email: 1 },
+          { name: "email_idx" }
+        ),
         // Conversations: fast per-user listing sorted by recency
         db.collection("conversations").createIndex(
           { user_id: 1, updated_at: -1 },
