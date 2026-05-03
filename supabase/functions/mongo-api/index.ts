@@ -136,6 +136,7 @@ Deno.serve(async (req) => {
 
     const { action, payload = {} } = await req.json();
     const db = await getDb();
+    await upsertUser(db, user as any);
     const conversations = db.collection("conversations");
     const messages = db.collection("messages");
 
@@ -171,6 +172,8 @@ Deno.serve(async (req) => {
         const doc = {
           title: payload.title || "New chat",
           user_id: user.id,
+          user_email: (user as any).email ?? null,
+          user_display_name: (user as any).displayName ?? null,
           tone: payload.tone || "balanced",
           system_prompt: payload.system_prompt ?? null,
           created_at: now,
@@ -238,6 +241,7 @@ Deno.serve(async (req) => {
         const doc = {
           conversation_id: conversationId,
           user_id: user.id,
+          user_email: (user as any).email ?? null,
           role,
           content: content ?? "",
           images,
@@ -267,21 +271,40 @@ Deno.serve(async (req) => {
       // ---------- Admin ----------
       case "getStats": {
         if (!user.isAdmin) return json({ error: "Forbidden" }, 403);
-        const [convs, msgs, imgs, recent] = await Promise.all([
+        const [convs, msgs, imgs, recent, usersCount] = await Promise.all([
           conversations.countDocuments({}),
           messages.countDocuments({}),
           messages.countDocuments({ kind: "generated_image" }),
           conversations.find({}).sort({ updated_at: -1 }).limit(20).toArray(),
+          db.collection("users").countDocuments({}),
         ]);
         // Distinct user count
         const userIds = await conversations.distinct("user_id");
         return json({
-          users: userIds.length,
+          users: Math.max(usersCount, userIds.length),
           conversations: convs,
           messages: msgs,
           generatedImages: imgs,
           recent: recent.map(serialize),
         });
+      }
+
+      case "backfillUsers": {
+        if (!user.isAdmin) return json({ error: "Forbidden" }, 403);
+        const distinctIds = await conversations.distinct("user_id");
+        let upserted = 0;
+        for (const uid of distinctIds) {
+          const exists = await db.collection("users").findOne({ user_id: uid });
+          if (!exists) {
+            await db.collection("users").updateOne(
+              { user_id: uid },
+              { $set: { user_id: uid, created_at: new Date(), last_seen_at: new Date() } },
+              { upsert: true }
+            );
+            upserted++;
+          }
+        }
+        return json({ ok: true, users_upserted: upserted, distinct_user_ids: distinctIds.length });
       }
 
       default:
