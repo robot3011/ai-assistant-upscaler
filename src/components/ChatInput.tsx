@@ -98,14 +98,18 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
       toast.error("Voice input not supported in this browser");
       return;
     }
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      toast.error("Voice input requires a secure (https) connection");
+      return;
+    }
     if (isListening && recognitionRef.current) {
       voiceSessionRef.current += 1;
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
       setIsListening(false);
       return;
     }
-    recognitionRef.current?.abort?.();
+    try { recognitionRef.current?.abort?.(); } catch {}
     const sessionId = voiceSessionRef.current + 1;
     voiceSessionRef.current = sessionId;
     const rec = new SR();
@@ -139,8 +143,25 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
       if (voiceSessionRef.current !== sessionId) return;
       setIsListening(false);
       recognitionRef.current = null;
-      if (ev?.error !== "no-speech" && ev?.error !== "aborted") {
-        toast.error("Voice recognition error");
+      switch (ev?.error) {
+        case "no-speech":
+        case "aborted":
+          break;
+        case "not-allowed":
+        case "service-not-allowed":
+          toast.error("Microphone blocked. Allow mic access in your browser settings.");
+          break;
+        case "audio-capture":
+          toast.error("No microphone found. Please connect one and try again.");
+          break;
+        case "network":
+          toast.error("Voice input needs an internet connection.");
+          break;
+        case "language-not-supported":
+          toast.error("Selected language is not supported for voice input.");
+          break;
+        default:
+          toast.error("Voice recognition error. Please try again.");
       }
     };
     rec.onend = () => {
