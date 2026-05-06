@@ -26,9 +26,7 @@ const compactDuplicateSpeech = (value: string) => {
     changed = false;
     for (let i = 0; i < words.length; i++) {
       const maxPhraseLength = Math.floor((words.length - i) / 2);
-      // Only collapse phrases of length >= 2. Single-word repeats like
-      // "very very good" or "bye bye" are legitimate speech and must be kept.
-      for (let len = maxPhraseLength; len >= 2; len--) {
+      for (let len = maxPhraseLength; len >= 1; len--) {
         const left = words.slice(i, i + len);
         const right = words.slice(i + len, i + len * 2);
         if (left.length === right.length && left.every((word, idx) => wordsMatch(word, right[idx]))) {
@@ -119,26 +117,18 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
     rec.interimResults = true;
     rec.lang = "en-US";
 
-    // Snapshot of typed text when this voice segment started. We refresh
-    // it on every final result so that anything the user types into the
-    // textarea while the mic is on is preserved (and not overwritten by
-    // the recognized speech).
-    let baseText = inputRef.current;
+    const baseText = inputRef.current;
     const finalByIndex = new Map<number, string>();
 
     rec.onresult = (e: any) => {
       if (voiceSessionRef.current !== sessionId) return;
       let interim = "";
-      let gotNewFinal = false;
       for (let i = e.resultIndex ?? 0; i < e.results.length; i++) {
         const result = e.results[i];
         const t = cleanSpeechText(result[0]?.transcript || "");
         if (!t) continue;
         if (result.isFinal) {
-          if (finalByIndex.get(i) !== t) {
-            finalByIndex.set(i, t);
-            gotNewFinal = true;
-          }
+          finalByIndex.set(i, t);
         } else {
           interim += (interim ? " " : "") + t;
         }
@@ -147,15 +137,7 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
         .sort(([a], [b]) => a - b)
         .map(([, text]) => text)
         .join(" ");
-      const combined = [finalized, interim].filter(Boolean).join(" ");
-      setInput(joinTypedAndSpokenText(baseText, combined));
-      // Once a chunk is final, "commit" it into baseText so the user can
-      // keep typing in the textarea without losing characters on the next
-      // interim event.
-      if (gotNewFinal) {
-        baseText = joinTypedAndSpokenText(baseText, finalized);
-        finalByIndex.clear();
-      }
+      setInput(joinTypedAndSpokenText(baseText, [finalized, interim].filter(Boolean).join(" ")));
     };
     rec.onerror = (ev: any) => {
       if (voiceSessionRef.current !== sessionId) return;
