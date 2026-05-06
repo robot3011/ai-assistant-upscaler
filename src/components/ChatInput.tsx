@@ -26,7 +26,9 @@ const compactDuplicateSpeech = (value: string) => {
     changed = false;
     for (let i = 0; i < words.length; i++) {
       const maxPhraseLength = Math.floor((words.length - i) / 2);
-      for (let len = maxPhraseLength; len >= 1; len--) {
+      // Only collapse phrases of length >= 2. Single-word repeats like
+      // "very very good" or "bye bye" are legitimate speech and must be kept.
+      for (let len = maxPhraseLength; len >= 2; len--) {
         const left = words.slice(i, i + len);
         const right = words.slice(i + len, i + len * 2);
         if (left.length === right.length && left.every((word, idx) => wordsMatch(word, right[idx]))) {
