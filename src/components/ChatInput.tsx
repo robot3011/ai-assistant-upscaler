@@ -100,14 +100,18 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
       toast.error("Voice input not supported in this browser");
       return;
     }
+    if (typeof window !== "undefined" && window.isSecureContext === false) {
+      toast.error("Voice input requires a secure (https) connection");
+      return;
+    }
     if (isListening && recognitionRef.current) {
       voiceSessionRef.current += 1;
-      recognitionRef.current.stop();
+      try { recognitionRef.current.stop(); } catch {}
       recognitionRef.current = null;
       setIsListening(false);
       return;
     }
-    recognitionRef.current?.abort?.();
+    try { recognitionRef.current?.abort?.(); } catch {}
     const sessionId = voiceSessionRef.current + 1;
     voiceSessionRef.current = sessionId;
     const rec = new SR();
@@ -115,18 +119,26 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
     rec.interimResults = true;
     rec.lang = "en-US";
 
-    const baseText = inputRef.current;
+    // Snapshot of typed text when this voice segment started. We refresh
+    // it on every final result so that anything the user types into the
+    // textarea while the mic is on is preserved (and not overwritten by
+    // the recognized speech).
+    let baseText = inputRef.current;
     const finalByIndex = new Map<number, string>();
 
     rec.onresult = (e: any) => {
       if (voiceSessionRef.current !== sessionId) return;
       let interim = "";
+      let gotNewFinal = false;
       for (let i = e.resultIndex ?? 0; i < e.results.length; i++) {
         const result = e.results[i];
         const t = cleanSpeechText(result[0]?.transcript || "");
         if (!t) continue;
         if (result.isFinal) {
-          finalByIndex.set(i, t);
+          if (finalByIndex.get(i) !== t) {
+            finalByIndex.set(i, t);
+            gotNewFinal = true;
+          }
         } else {
           interim += (interim ? " " : "") + t;
         }
@@ -135,14 +147,39 @@ export function ChatInput({ onSend, isLoading, onStop, mode, setMode }: Props) {
         .sort(([a], [b]) => a - b)
         .map(([, text]) => text)
         .join(" ");
-      setInput(joinTypedAndSpokenText(baseText, [finalized, interim].filter(Boolean).join(" ")));
+      const combined = [finalized, interim].filter(Boolean).join(" ");
+      setInput(joinTypedAndSpokenText(baseText, combined));
+      // Once a chunk is final, "commit" it into baseText so the user can
+      // keep typing in the textarea without losing characters on the next
+      // interim event.
+      if (gotNewFinal) {
+        baseText = joinTypedAndSpokenText(baseText, finalized);
+        finalByIndex.clear();
+      }
     };
     rec.onerror = (ev: any) => {
       if (voiceSessionRef.current !== sessionId) return;
       setIsListening(false);
       recognitionRef.current = null;
-      if (ev?.error !== "no-speech" && ev?.error !== "aborted") {
-        toast.error("Voice recognition error");
+      switch (ev?.error) {
+        case "no-speech":
+        case "aborted":
+          break;
+        case "not-allowed":
+        case "service-not-allowed":
+          toast.error("Microphone blocked. Allow mic access in your browser settings.");
+          break;
+        case "audio-capture":
+          toast.error("No microphone found. Please connect one and try again.");
+          break;
+        case "network":
+          toast.error("Voice input needs an internet connection.");
+          break;
+        case "language-not-supported":
+          toast.error("Selected language is not supported for voice input.");
+          break;
+        default:
+          toast.error("Voice recognition error. Please try again.");
       }
     };
     rec.onend = () => {
